@@ -35,7 +35,7 @@ def train_epoch(model, loader, optimizer, criterion, device):
 
         optimizer.zero_grad()
         output = model(src, tgt[:, :-1], src_mask, tgt_mask[:, :-1, :-1], memory_mask[:, :-1, :])  # tgt input without last token
-        loss = criterion(output.view(-1, tgt_vocab_size), tgt[:, 1:].contiguous().view(-1))  # target without first token
+        loss = criterion(output, tgt[:, 1:])  # target without first token
         loss.backward()
         optimizer.step()
         total_loss += loss.item()

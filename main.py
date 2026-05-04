@@ -12,11 +12,11 @@ from inference import greedy_decode, beam_search
 from config import *
 
 def build_model(device):
-    model = ISLTransformer(src_vocab_size, tgt_vocab_size, d_model, nhead, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout, max_len)
+    model = ISLTransformer(len(src_tokenizer.stoi), len(tgt_tokenizer.stoi), d_model, nhead, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout, max_len)
     model.to(device)
     return model
 
-def train_model(model, device):
+def train_model(model, device, num_epochs=epochs):
     # Data
     dataset = ISLDataset('data.csv', src_tokenizer, tgt_tokenizer)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
@@ -25,14 +25,18 @@ def train_model(model, device):
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Loss
-    criterion = LabelSmoothingLoss(tgt_vocab_size)
+    criterion = LabelSmoothingLoss(len(tgt_tokenizer.stoi))
 
     # Training
-    for epoch in range(epochs):
+    for epoch in range(num_epochs):
         loss = train_epoch(model, loader, optimizer, criterion, device)
         print(f'Epoch {epoch+1}, Loss: {loss:.4f}')
 
-    torch.save(model.state_dict(), checkpoint_path)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'src_vocab_size': len(src_tokenizer.stoi),
+        'tgt_vocab_size': len(tgt_tokenizer.stoi),
+    }, checkpoint_path)
     print(f'Saved checkpoint: {checkpoint_path}')
 
 def run_inference(model, src_text, device):
@@ -54,20 +58,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['train', 'infer', 'both'], default='infer')
     parser.add_argument('--text', default='have you seen my computer')
+    parser.add_argument('--epochs', type=int, default=epochs)
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = build_model(device)
 
     if args.mode in ['train', 'both']:
-        train_model(model, device)
+        train_model(model, device, args.epochs)
     elif os.path.exists(checkpoint_path):
-        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+        try:
+            model.load_state_dict(state_dict)
+        except RuntimeError:
+            print(f'The checkpoint at {checkpoint_path} was saved with an older vocabulary/model shape.')
+            print('Run `python main.py --mode train` once to rebuild it with the real data vocabulary.')
+            return
         print(f'Loaded checkpoint: {checkpoint_path}')
     else:
-        raise FileNotFoundError(
-            f"No checkpoint found at {checkpoint_path}. Run `python main.py --mode train` first."
-        )
+        print(f'No checkpoint found at {checkpoint_path}.')
+        print('Run `python main.py --mode train` once to train and save the model.')
+        print('For a quick smoke test, run `python main.py --mode train --epochs 1`.')
+        return
 
     if args.mode in ['infer', 'both']:
         run_inference(model, args.text, device)

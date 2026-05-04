@@ -23,7 +23,7 @@ EOS_TOKEN = '<eos>'
 
 # Training hyperparameters
 batch_size = 32
-epochs = 30
+epochs = 10
 lr = 1e-4
 warmup_steps = 4000
 label_smoothing = 0.1

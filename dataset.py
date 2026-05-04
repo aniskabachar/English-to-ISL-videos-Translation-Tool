@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset
 import pandas as pd
 import string
+import os
 from config import *
 
 class Tokenizer:
@@ -24,17 +25,36 @@ class Tokenizer:
         tokens = [self.itos.get(i, UNK_TOKEN) for i in indices]
         return ' '.join(tokens)
 
-# Assume vocab is built separately, for now dummy
-# In practice, build from data
-src_vocab = {PAD_TOKEN: 0, UNK_TOKEN: 1, BOS_TOKEN: 2, EOS_TOKEN: 3}
-# Add more words...
-for i in range(4, src_vocab_size):
-    src_vocab[f'word{i}'] = i
+def preprocess_src(text):
+    return ''.join(c for c in str(text).lower() if c not in string.punctuation).strip()
 
-tgt_vocab = {PAD_TOKEN: 0, UNK_TOKEN: 1, BOS_TOKEN: 2, EOS_TOKEN: 3}
-# Add gloss signs...
-for i in range(4, tgt_vocab_size):
-    tgt_vocab[f'GLOSS{i}'] = i
+def preprocess_tgt(text):
+    return str(text).upper().strip()
+
+def build_vocab(tokens):
+    vocab = {PAD_TOKEN: 0, UNK_TOKEN: 1, BOS_TOKEN: 2, EOS_TOKEN: 3}
+    for token in sorted(set(tokens)):
+        if token and token not in vocab:
+            vocab[token] = len(vocab)
+    return vocab
+
+def build_vocabs_from_csv(data_path='data.csv'):
+    if not os.path.exists(data_path):
+        return build_vocab([]), build_vocab([])
+
+    data = pd.read_csv(data_path)
+    src_tokens = []
+    tgt_tokens = []
+
+    for sentence in data['Sentence']:
+        src_tokens.extend(preprocess_src(sentence).split())
+
+    for glosses in data['SIGN GLOSSES']:
+        tgt_tokens.extend(preprocess_tgt(glosses).split())
+
+    return build_vocab(src_tokens), build_vocab(tgt_tokens)
+
+src_vocab, tgt_vocab = build_vocabs_from_csv()
 
 src_tokenizer = Tokenizer(src_vocab, [PAD_TOKEN, UNK_TOKEN, BOS_TOKEN, EOS_TOKEN])
 tgt_tokenizer = Tokenizer(tgt_vocab, [PAD_TOKEN, UNK_TOKEN, BOS_TOKEN, EOS_TOKEN])
@@ -51,8 +71,8 @@ class ISLDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
-        src_text = ''.join(c for c in row['Sentence'].lower() if c not in string.punctuation).strip()  # Preprocessing
-        tgt_text = row['SIGN GLOSSES'].upper().strip()
+        src_text = preprocess_src(row['Sentence'])
+        tgt_text = preprocess_tgt(row['SIGN GLOSSES'])
 
         src_indices = self.src_tokenizer.encode(src_text)
         tgt_indices = self.tgt_tokenizer.encode(tgt_text)
